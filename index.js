@@ -57,7 +57,8 @@
     vy: 0,
     grounded: true,
     ducking: false,
-    jumpHold: 0
+    jumpHold: 0,
+    invincibleTimer: 0
   };
 
   var game = {
@@ -65,7 +66,10 @@
     distance: 0,
     score: 0,
     obstacles: [],
-    dust: []
+    dust: [],
+    groundDecorations: [],
+    consecutiveFlying: 0,
+    lastObstacleType: null
   };
 
   function loadAssets() {
@@ -104,13 +108,30 @@
     player.grounded = true;
     player.ducking = false;
     player.jumpHold = 0;
+    player.invincibleTimer = 0;
     game.speed = 410;
     game.distance = 0;
     game.score = 0;
     game.obstacles = [];
     game.dust = [];
+    game.groundDecorations = generateGroundDecorations();
+    game.consecutiveFlying = 0;
+    game.lastObstacleType = null;
     spawnTimer = 0.65;
     lastTime = performance.now();
+  }
+
+  function generateGroundDecorations() {
+    var decors = [];
+    for (var i = 0; i < 30; i++) {
+      decors.push({
+        x: i * 80 + Math.random() * 40,
+        type: Math.random() < 0.5 ? "grass" : "pebble",
+        h: 3 + Math.random() * 5,
+        color: Math.random() < 0.5 ? "#9ab89a" : "#8aaa8a"
+      });
+    }
+    return decors;
   }
 
   function startGame() {
@@ -203,6 +224,16 @@
     var useAlt = Math.random() < 0.5;
     var obstacle;
 
+    // Avoid too many consecutive flying obstacles
+    if (flying && game.consecutiveFlying >= 2) {
+      flying = false;
+    }
+
+    // Avoid same ground obstacle type twice in a row for variety
+    if (!flying && game.lastObstacleType && game.lastObstacleType.indexOf("qiaolezi") === 0 && Math.random() < 0.6) {
+      useAlt = game.lastObstacleType !== "qiaoleziAlt";
+    }
+
     if (flying) {
       var heightRoll = Math.random();
       var lane;
@@ -235,6 +266,7 @@
         lane: lane,
         speedMultiplier: speedMultiplier
       };
+      game.consecutiveFlying += 1;
     } else {
       obstacle = {
         type: useAlt ? "qiaoleziAlt" : "qiaolezi",
@@ -246,10 +278,15 @@
         hitPad: 9,
         speedMultiplier: 1
       };
+      game.consecutiveFlying = 0;
     }
 
+    game.lastObstacleType = obstacle.type;
     game.obstacles.push(obstacle);
-    spawnTimer = 0.92 + Math.random() * 0.78 - Math.min(game.score / 3200, 0.32);
+
+    // Increase minimum spawn interval at higher speeds
+    var minInterval = 0.55 + Math.min(game.score / 5000, 0.25);
+    spawnTimer = Math.max(minInterval, 0.92 + Math.random() * 0.78 - Math.min(game.score / 3200, 0.32));
   }
 
   function getFlyingY(lane) {
@@ -265,7 +302,18 @@
   }
 
   function update(dt) {
+    var wasH = player.h;
     updatePlayerShape();
+
+    // If shape changed (stand <-> duck), grant brief invincibility
+    if (player.h !== wasH) {
+      player.invincibleTimer = 0.12;
+    }
+
+    // Decrease invincibility timer
+    if (player.invincibleTimer > 0) {
+      player.invincibleTimer -= dt;
+    }
 
     if (input.jumpHeld && player.jumpHold > 0 && player.vy < 0 && !input.duckHeld) {
       player.vy += jumpHoldForce * dt;
@@ -309,7 +357,25 @@
       return dot.life > 0;
     });
 
-    if (game.obstacles.some(collides)) {
+    // Update ground decorations
+    game.groundDecorations.forEach(function (d) {
+      d.x -= game.speed * dt;
+    });
+    game.groundDecorations = game.groundDecorations.filter(function (d) {
+      return d.x > -20;
+    });
+    while (game.groundDecorations.length < 30) {
+      var lastX = game.groundDecorations.length > 0 ? game.groundDecorations[game.groundDecorations.length - 1].x : W;
+      game.groundDecorations.push({
+        x: lastX + 50 + Math.random() * 60,
+        type: Math.random() < 0.5 ? "grass" : "pebble",
+        h: 3 + Math.random() * 5,
+        color: Math.random() < 0.5 ? "#9ab89a" : "#8aaa8a"
+      });
+    }
+
+    // Only check collision if not invincible
+    if (player.invincibleTimer <= 0 && game.obstacles.some(collides)) {
       endGame();
     }
   }
@@ -343,37 +409,110 @@
   function getPlayerHitBox() {
     if (player.ducking) {
       return {
-        x: player.x + 10,
-        y: player.y + 15,
-        w: player.w - 18,
-        h: player.h - 30
+        x: player.x + 14,
+        y: player.y + 18,
+        w: player.w - 26,
+        h: player.h - 34
       };
     }
 
     return {
-      x: player.x + 11,
-      y: player.y + 8,
-      w: player.w - 20,
-      h: player.h - 12
+      x: player.x + 14,
+      y: player.y + 10,
+      w: player.w - 26,
+      h: player.h - 18
     };
   }
 
+  // ============ DRAWING ============
+
   function drawBackground() {
-    ctx.fillStyle = "#f7fbff";
+    drawSky();
+    drawMountains();
+    drawCloudsFar();
+    drawCloudsNear();
+    drawTreadmill();
+    drawGroundDecorations();
+  }
+
+  function drawSky() {
+    var grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, "#d4e8f5");
+    grd.addColorStop(0.5, "#e8f4fc");
+    grd.addColorStop(1, "#f7fbff");
+    ctx.fillStyle = grd;
     ctx.fillRect(0, 0, W, H);
 
+    // Sun
+    ctx.fillStyle = "rgba(255, 230, 180, 0.6)";
+    ctx.beginPath();
+    ctx.arc(W - 120, 70, 36, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 240, 200, 0.35)";
+    ctx.beginPath();
+    ctx.arc(W - 120, 70, 52, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawMountains() {
+    var offset = (game.distance * 0.04) % W;
+
+    ctx.fillStyle = "#c5d9cc";
+    ctx.beginPath();
+    ctx.moveTo(0, groundY - 40);
+    for (var x = 0; x <= W + 100; x += 60) {
+      var mx = x - offset;
+      var h = 30 + Math.sin(x * 0.015) * 20 + Math.sin(x * 0.03) * 12;
+      ctx.lineTo(mx, groundY - 40 - h);
+    }
+    ctx.lineTo(W + 100, groundY);
+    ctx.lineTo(-100, groundY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Second layer closer
+    ctx.fillStyle = "#b0cdba";
+    ctx.beginPath();
+    ctx.moveTo(0, groundY - 20);
+    for (var x2 = 0; x2 <= W + 100; x2 += 40) {
+      var mx2 = x2 - offset * 1.5;
+      var h2 = 15 + Math.sin(x2 * 0.02 + 1) * 12 + Math.sin(x2 * 0.05) * 8;
+      ctx.lineTo(mx2, groundY - 20 - h2);
+    }
+    ctx.lineTo(W + 100, groundY);
+    ctx.lineTo(-100, groundY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawCloudsFar() {
+    ctx.fillStyle = "#dbece2";
+    for (var i = 0; i < 4; i++) {
+      var cloudX = (W - ((game.distance * 0.06 + i * 320) % (W + 200))) + 20;
+      var cloudY = 30 + (i % 3) * 22;
+      drawCloud(cloudX, cloudY, 0.7);
+    }
+  }
+
+  function drawCloudsNear() {
     ctx.fillStyle = "#e8f3ec";
-    for (var i = 0; i < 5; i += 1) {
+    for (var i = 0; i < 5; i++) {
       var cloudX = (W - ((game.distance * 0.12 + i * 245) % (W + 160))) + 24;
       var cloudY = 44 + (i % 3) * 28;
-      ctx.beginPath();
-      ctx.ellipse(cloudX, cloudY, 42, 13, 0, 0, Math.PI * 2);
-      ctx.ellipse(cloudX + 34, cloudY - 4, 24, 10, 0, 0, Math.PI * 2);
-      ctx.ellipse(cloudX - 34, cloudY + 3, 23, 9, 0, 0, Math.PI * 2);
-      ctx.fill();
+      drawCloud(cloudX, cloudY, 1.0);
     }
+  }
 
-    drawTreadmill();
+  function drawCloud(x, y, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 42, 13, 0, 0, Math.PI * 2);
+    ctx.ellipse(34, -4, 24, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(-34, 3, 23, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function drawTreadmill() {
@@ -428,6 +567,26 @@
     ctx.fillRect(W - 122, deckTop + 22, 18, 24);
   }
 
+  function drawGroundDecorations() {
+    game.groundDecorations.forEach(function (d) {
+      if (d.type === "grass") {
+        ctx.strokeStyle = d.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(d.x, groundY + 2);
+        ctx.lineTo(d.x - 2, groundY + 2 - d.h);
+        ctx.moveTo(d.x, groundY + 2);
+        ctx.lineTo(d.x + 2, groundY + 2 - d.h * 0.8);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.ellipse(d.x, groundY + 4, 3 + Math.random() * 2, 1.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
   function drawRoller(x, y, radius) {
     ctx.fillStyle = "#151f1a";
     ctx.beginPath();
@@ -464,6 +623,14 @@
     var bob = player.grounded ? Math.sin(game.distance / 18) * 2 : 0;
     var img = player.ducking ? images.duck : images.runner;
     ctx.drawImage(img, player.x, player.y + bob, player.w, player.h);
+
+    // Debug: draw hitbox when invincible
+    if (player.invincibleTimer > 0) {
+      var box = getPlayerHitBox();
+      ctx.strokeStyle = "rgba(255, 255, 0, 0.5)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.x, box.y, box.w, box.h);
+    }
   }
 
   function drawObstacles() {
