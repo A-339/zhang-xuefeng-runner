@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>张雪峰快跑</title>
+  <link rel="stylesheet" href="index.css">
+  <script defer src="index.js"></script>
+</head>
+<body>
+  <main class="game-shell" aria-label="张雪峰快跑">
+    <div class="hud" aria-live="polite">
+      <div>
+        <strong>张雪峰快跑</strong>
+        <span>长按跳更高，按&#8595;蹲下躲雪碧</span>
+      </div>
+      <div class="scoreboard">
+        <span id="score">00000</span>
+        <span id="best">HI 00000</span>
+      </div>
+    </div>
+
+    <canvas id="game" width="960" height="360"></canvas>
+
+    <div id="overlay" class="overlay">
+      <h1>张雪峰快跑</h1>
+      <p id="overlayText">空格 / &#8593; 跳跃，长按跳得更高；按 &#8595; 蹲下躲过雪碧。</p>
+      <button id="startButton" type="button">开始</button>
+    </div>
+
+    <div class="mobile-controls">
+      <button id="jumpBtn" class="control-btn jump-btn" type="button">&#8593;<br>跳跃</button>
+      <button id="duckBtn" class="control-btn duck-btn" type="button">&#8595;<br>蹲下</button>
+    </div>
+  </main>
+</body>
+</html>
