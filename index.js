@@ -27,7 +27,7 @@
     jumpHeld: false,
     duckHeld: false
   };
-  var bgm = new Audio("assets/bgm.m4a");
+  var bgm = new Audio("assets/bgm.mp3");
   bgm.loop = true;
   bgm.volume = 0.5;
   var deathSound = new Audio("assets/death.mp3");
